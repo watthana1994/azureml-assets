@@ -77,6 +77,11 @@ def parse_args() -> ArgumentParser:
         required=False,
         help="The system message to be used for chat prompts.")
     parser.add_argument(
+        "--additional_columns",
+        type=str,
+        required=False,
+        help="The additional columns to be passed in the output (as is).")
+    parser.add_argument(
         "--output_pattern",
         type=str,
         required=True,
@@ -98,6 +103,7 @@ def main(
         system_message: Optional[str] = None,
         few_shot_data: Optional[str] = None,
         random_seed: Optional[int] = 0,
+        additional_columns: Optional[str] = None,
 ) -> None:
     """Entry function for Prompt Crafter Component.
 
@@ -124,6 +130,7 @@ def main(
         prompt_pattern=prompt_pattern,
         few_shot_separator=few_shot_separator,
         prefix=prefix,
+        additional_columns=additional_columns,
         output_file=output_file,
         output_mltable=None,
         metadata_keys=None,
@@ -141,6 +148,7 @@ def main(
         output_pattern=output_pattern,
         system_message=system_message,
         random_seed=random_seed,
+        additional_columns=additional_columns,
         test_dataset_checksum=resolve_io_path(test_data),
         few_shot_dataset_checksum=resolve_io_path(few_shot_data)
         if few_shot_data else None,
@@ -162,4 +170,5 @@ if __name__ == "__main__":
         prefix=args.prefix,
         output_file=args.output_file,
         system_message=args.system_message,
+        additional_columns=args.additional_columns,
     )

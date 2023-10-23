@@ -190,6 +190,10 @@ class PromptFactory(ABC):
         if self.output_pattern is not None:
             output_data['completion'] = self.get_label_from_output_pattern(row)
 
+        if self.additional_column is not None and self.additional_column != "" and self.additional_column != "None":
+            if self.additional_column in row:
+                output_data[self.additional_column] = row[self.additional_column]
+
         if self.metadata_keys is not None:
             def collect_metadata(metadata_keys, data, index):
                 metadata = data.get("metadata", {})
