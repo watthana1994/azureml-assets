@@ -268,7 +268,7 @@ class TestDatasetPreprocessorScript:
         if encoder_config is not None:
             argss.extend(["--encoder_config", str(encoder_config)])
         argss = " ".join(argss)
-        cmd = f"cd {src_dir} && python -m dataset_preprocessor.main {argss}"
+        cmd = f"cd {src_dir} && python -m aml_benchmark.dataset_preprocessor.main {argss}"
         run_command(f"{cmd}")
         _verify_and_get_output_records(
             dataset_name, dataset,
@@ -352,7 +352,7 @@ class TestDatasetPreprocessorScript:
         src_dir = get_src_dir()
         try:
             argss = " ".join(["--template_input", f"'{template_input}'"])
-            cmd = f"cd {src_dir} && python -m dataset_preprocessor.main {argss}"
+            cmd = f"cd {src_dir} && python -m aml_benchmark.dataset_preprocessor.main {argss}"
             run_command(f"{cmd}")
         except subprocess.CalledProcessError as e:
             out_message = e.output.strip()
@@ -362,7 +362,7 @@ class TestDatasetPreprocessorScript:
         os.system(f"mkdir {dummy_dataset_path}")
         try:
             argss = " ".join(["--dataset", dummy_dataset_path])
-            cmd = f"cd {src_dir} && python -m dataset_preprocessor.main {argss}"
+            cmd = f"cd {src_dir} && python -m aml_benchmark.dataset_preprocessor.main {argss}"
             run_command(f"{cmd}")
         except subprocess.CalledProcessError as e:
             exception_message = e.output.strip()
@@ -370,7 +370,7 @@ class TestDatasetPreprocessorScript:
 
         try:
             argss = " ".join(["--dataset", dataset])
-            cmd = f"cd {src_dir} && python -m dataset_preprocessor.main {argss}"
+            cmd = f"cd {src_dir} && python -m aml_benchmark.dataset_preprocessor.main {argss}"
             run_command(f"{cmd}")
         except subprocess.CalledProcessError as e:
             exception_message = e.output.strip()
@@ -380,7 +380,7 @@ class TestDatasetPreprocessorScript:
         os.system(f"touch {dummy_script_path}")
         try:
             argss = " ".join(["--dataset", dataset, "--script_path", dummy_script_path])
-            cmd = f"cd {src_dir} && python -m dataset_preprocessor.main {argss}"
+            cmd = f"cd {src_dir} && python -m aml_benchmark.dataset_preprocessor.main {argss}"
             run_command(f"{cmd}")
         except subprocess.CalledProcessError as e:
             exception_message = e.output.strip()
@@ -433,7 +433,7 @@ class TestDatasetPreprocessorScript:
         if encoder_config is not None:
             argss.extend(["--encoder_config", str(encoder_config)])
         argss = " ".join(argss)
-        cmd = f"cd {src_dir} && python -m dataset_preprocessor.main {argss}"
+        cmd = f"cd {src_dir} && python -m aml_benchmark.dataset_preprocessor.main {argss}"
         run_command(f"{cmd}")
         with open(dataset, "r") as f:
             input_records = [json.loads(line) for line in f]
