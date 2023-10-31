@@ -10,6 +10,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 import uuid
 from typing import Any, Dict, Optional
 
@@ -18,9 +19,13 @@ import mltable
 import pandas as pd
 from arg_helpers import get_from_args
 from azureml.core import Model, Run, Workspace
-from constants import DashboardInfo, PropertyKeyValues, RAIToolType
+from constants import (MLFLOW_MODEL_SERVER_PORT, DashboardInfo,
+                       PropertyKeyValues, RAIToolType)
+import requests
 from raiutils.exceptions import UserConfigValidationException
 from responsibleai.feature_metadata import FeatureMetadata
+from responsibleai._internal._served_model_wrapper import ServedModelWrapper
+
 
 from responsibleai import RAIInsights
 from responsibleai import __version__ as responsibleai_version
@@ -78,6 +83,7 @@ def fetch_model_id(model_info_path: str):
 def load_mlflow_model(
     workspace: Workspace,
     use_model_dependency: bool = False,
+    use_separate_conda_env: bool = False,
     model_id: Optional[str] = None,
     model_path: Optional[str] = None,
 ) -> Any:
@@ -96,27 +102,44 @@ def load_mlflow_model(
         model_uri = "models:/{}/{}".format(model.name, model.version)
 
     if use_model_dependency:
-        try:
-            pip_file = mlflow.pyfunc.get_model_dependencies(model_uri)
-        except Exception as e:
-            raise ValueError(
-                "Failed to get model dependency from given model {}, error:\n{}".format(
-                    model_uri, e
+        if not use_separate_conda_env:
+            try:
+                conda_file = mlflow.pyfunc.get_model_dependencies(model_uri, format="conda")
+            except Exception as e:
+                raise UserConfigError(
+                    "Failed to get model dependency from given model {}, error:\n{}".format(
+                        model_uri, e
+                    ), e
                 )
-            )
         try:
-            subprocess.check_output(
-                [sys.executable, "-m", "pip", "install", "-r", pip_file]
+            if use_separate_conda_env:
+                conda_install_command = ["mlflow", "models", "prepare-env",
+                                         "-m", model_uri,
+                                         "--env-manager", "conda"]
+            else:
+                # mlflow model input mount as read only. Conda need write access.
+                local_conda_dep = "./conda_dep.yaml"
+                shutil.copyfile(conda_file, local_conda_dep)
+                conda_prefix = str(Path(sys.executable).parents[1])
+                conda_install_command = ["conda", "env", "update",
+                                         "--prefix", conda_prefix,
+                                         "-f", local_conda_dep]
+
+            install_log = subprocess.check_output(conda_install_command)
+            _logger.info(
+                "Conda dependency installation successful, logs: {}".format(
+                    install_log
+                )
             )
         except subprocess.CalledProcessError as e:
             _logger.error(
-                "Installing dependency using requriments.txt from mlflow model failed: {}".format(
+                "Installing dependency using conda.yaml from mlflow model failed: {}".format(
                     e.output
                 )
             )
             _classify_and_log_pip_install_error(e.output)
             raise UserConfigValidationException(
-                "Installing dependency using requirments.txt from mlflow model failed. "
+                "Installing dependency using conda environment spec from mlflow model failed. "
                 "This behavior can be turned off with setting use_model_dependency to False in job spec. "
                 "You may also check error log above to manually resolve package conflict error"
             )
@@ -124,14 +147,85 @@ def load_mlflow_model(
 
     try:
         model = mlflow.pyfunc.load_model(model_uri)._model_impl
+        if not use_separate_conda_env:
+            model = mlflow.pyfunc.load_model(model_uri)._model_impl
+            return model
+
+        # Serve model from separate conda env using mlflow
+        mlflow_models_serve_logfile_name = "mlflow_models_serve.log"
+        try:
+            # run mlflow model server in background
+            with open(mlflow_models_serve_logfile_name, "w") as logfile:
+                model_serving_log = subprocess.Popen(
+                    [
+                        "mlflow",
+                        "models",
+                        "serve",
+                        "-m",
+                        model_uri,
+                        "--env-manager",
+                        "conda",
+                        "-p",
+                        str(MLFLOW_MODEL_SERVER_PORT)
+                    ],
+                    close_fds=True,
+                    stdout=logfile,
+                    stderr=logfile
+                )
+            _logger.info("Started mlflow model server process in the background")
+        except subprocess.CalledProcessError as e:
+            _logger.error(
+                f"Running mlflow models serve in the background failed: {e.output}"
+            )
+            _classify_and_log_pip_install_error(e.output)
+            raise RuntimeError(
+                "Starting the mlflow model server failed."
+            )
+
+        # If the server started successfully then the logfile should contain a line
+        # saying "Listening at: http"
+        # If not, it could either take more time to start or it failed to start.
+        # We can check if the process ended by calling poll() on it.
+        # Otherwise, we wait a predefined time and check again.
+        for _ in range(10):
+            with open(mlflow_models_serve_logfile_name, "r") as logfile:
+                logs = logfile.read()
+                if "Listening at: http" not in logs:
+                    if model_serving_log.poll() is not None:
+                        # process ended
+                        raise RuntimeError(
+                            f"Unable to start mlflow model server: {logs}"
+                        )
+                    # process still running, wait and try again...
+                else:
+                    try:
+                        # attempt to contact mlflow model server
+                        # if the response is a 500 (due to missing body) then the server is up
+                        # if it's a 404 then the server is just starting up and we need to wait
+                        test_response = requests.post(f"http://localhost:{MLFLOW_MODEL_SERVER_PORT}/invocations")
+                        if test_response.status_code == 500:
+                            break
+
+                    except Exception as e:
+                        _logger.info(
+                            "Waiting for mlflow model server to start, error: {}".format(
+                                e
+                            )
+                        )
+            time.sleep(5)
+        else:
+            raise RuntimeError(
+                "Unable to start mlflow model server."
+            )
+        _logger.info("Successfully started mlflow model server.")
+        model = ServedModelWrapper(port=MLFLOW_MODEL_SERVER_PORT)
         return model
     except Exception as e:
-        raise ValueError(
+        raise UserConfigError(
             "Unable to load mlflow model from {} in current environment due to error:\n{}".format(
                 model_uri, e
-            )
+            ), e
         )
-
 
 def _classify_and_log_pip_install_error(elog):
     if elog is not None:
@@ -376,9 +470,18 @@ def create_rai_insights_from_port_path(my_run: Run, port_path: str) -> RAIInsigh
     model_id = config[DashboardInfo.RAI_INSIGHTS_MODEL_ID_KEY]
     _logger.info("Loading model: {0}".format(model_id))
 
+    # For now, the separate conda env will only be used for forecasting.
+    # At a later point, we might enable this for all task types.
+    use_separate_conda_env = False
+    if "task_type" in constructor_args:
+        is_forecasting_task = constructor_args["task_type"] == "forecasting"
+        use_separate_conda_env = is_forecasting_task
+        constructor_args["forecasting_enabled"] = is_forecasting_task
+
     model_estimator = load_mlflow_model(
         workspace=my_run.experiment.workspace,
         use_model_dependency=use_model_dependency,
+        use_separate_conda_env=use_separate_conda_env,
         model_id=model_id,
     )
 
