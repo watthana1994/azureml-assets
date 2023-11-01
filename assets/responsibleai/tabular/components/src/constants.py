@@ -78,4 +78,5 @@ class RAIToolType:
     EXPLANATION = "explanation"
     SCORECARD = "scorecard"
 
+
 MLFLOW_MODEL_SERVER_PORT = 5432

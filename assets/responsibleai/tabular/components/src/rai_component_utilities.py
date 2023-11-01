@@ -4,7 +4,6 @@
 import json
 import logging
 import os
-import pathlib
 import re
 import shutil
 import subprocess
@@ -12,23 +11,22 @@ import sys
 import tempfile
 import time
 import uuid
+from pathlib import Path
 from typing import Any, Dict, Optional
 
 import mlflow
 import mltable
 import pandas as pd
+import requests
 from arg_helpers import get_from_args
 from azureml.core import Model, Run, Workspace
 from constants import (MLFLOW_MODEL_SERVER_PORT, DashboardInfo,
                        PropertyKeyValues, RAIToolType)
-import requests
 from raiutils.exceptions import UserConfigValidationException
-from responsibleai.feature_metadata import FeatureMetadata
-from responsibleai._internal._served_model_wrapper import ServedModelWrapper
-
-
 from responsibleai import RAIInsights
 from responsibleai import __version__ as responsibleai_version
+from responsibleai._internal._served_model_wrapper import ServedModelWrapper
+from responsibleai.feature_metadata import FeatureMetadata
 
 assetid_re = re.compile(
     r"azureml://locations/(?P<location>.*)/workspaces/(?P<workspaceid>.*)/(?P<assettype>.*)/(?P<assetname>.*)/versions/(?P<assetversion>.*)"  # noqa: E501
@@ -227,6 +225,7 @@ def load_mlflow_model(
             ), e
         )
 
+
 def _classify_and_log_pip_install_error(elog):
     if elog is not None:
         if b"Could not find a version that satisfies the requirement" in elog:
@@ -311,13 +310,13 @@ def load_dashboard_info_file(input_port_path: str) -> Dict[str, str]:
 
 
 def copy_dashboard_info_file(src_port_path: str, dst_port_path: str):
-    src = pathlib.Path(src_port_path) / DashboardInfo.RAI_INSIGHTS_PARENT_FILENAME
-    dst = pathlib.Path(dst_port_path) / DashboardInfo.RAI_INSIGHTS_PARENT_FILENAME
+    src = Path(src_port_path) / DashboardInfo.RAI_INSIGHTS_PARENT_FILENAME
+    dst = Path(dst_port_path) / DashboardInfo.RAI_INSIGHTS_PARENT_FILENAME
 
     shutil.copyfile(src, dst)
 
 
-def create_rai_tool_directories(rai_insights_dir: pathlib.Path) -> None:
+def create_rai_tool_directories(rai_insights_dir: Path) -> None:
     # Have to create empty subdirectories for the managers
     # THe RAI Insights object expect these to be present, but
     # since directories don't actually exist in Azure Blob store
@@ -330,7 +329,7 @@ def create_rai_tool_directories(rai_insights_dir: pathlib.Path) -> None:
 
 def load_rai_insights_from_input_port(input_port_path: str) -> RAIInsights:
     with tempfile.TemporaryDirectory() as incoming_temp_dir:
-        incoming_dir = pathlib.Path(incoming_temp_dir)
+        incoming_dir = Path(incoming_temp_dir)
         shutil.copytree(input_port_path, incoming_dir, dirs_exist_ok=True)
         _logger.info("Copied RAI Insights input to temporary directory")
 
@@ -342,7 +341,7 @@ def load_rai_insights_from_input_port(input_port_path: str) -> RAIInsights:
 
 
 def copy_insight_to_raiinsights(
-    rai_insights_dir: pathlib.Path, insight_dir: pathlib.Path
+    rai_insights_dir: Path, insight_dir: Path
 ) -> str:
     print("Starting copy")
 
@@ -398,18 +397,18 @@ def save_to_output_port(rai_i: RAIInsights, output_port_path: str, tool_type: st
         _logger.info(f"Saved to {tmpdirname}")
 
         tool_dir_name = _tool_directory_mapping[tool_type]
-        insight_dirs = os.listdir(pathlib.Path(tmpdirname) / tool_dir_name)
+        insight_dirs = os.listdir(Path(tmpdirname) / tool_dir_name)
         assert len(insight_dirs) == 1, "Checking for exactly one tool output"
         _logger.info("Checking dirname is GUID")
         uuid.UUID(insight_dirs[0])
 
-        target_path = pathlib.Path(output_port_path) / tool_dir_name
+        target_path = Path(output_port_path) / tool_dir_name
         target_path.mkdir()
         _logger.info("Created output directory")
 
         _logger.info("Starting copy")
         shutil.copytree(
-            pathlib.Path(tmpdirname) / tool_dir_name,
+            Path(tmpdirname) / tool_dir_name,
             target_path,
             dirs_exist_ok=True,
         )

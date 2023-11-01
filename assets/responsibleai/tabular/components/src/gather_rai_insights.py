@@ -12,7 +12,7 @@ from typing import Dict
 from _telemetry._loggerfactory import _LoggerFactory, track
 import numpy as np
 from azureml.core import Run
-from constants import (COMPONENT_NAME, MLFLOW_MODEL_SERVER_PORT, DashboardInfo,
+from constants import (MLFLOW_MODEL_SERVER_PORT, DashboardInfo,
                        RAIToolType)
 from rai_component_utilities import (add_properties_to_gather_run,
                                      copy_insight_to_raiinsights,
